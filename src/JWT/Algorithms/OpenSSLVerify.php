@@ -62,9 +62,12 @@ class OpenSSLVerify extends Algorithm implements VerifiesToken
         }
 
         if (!$public = \openssl_pkey_get_public($this->public->asPem())) {
-            $errors = $this->collectOpenSSLErrors();
             throw new VerificationFailed(
-                sprintf('Failed to load public key for algorithm %s. OpenSSL errors: %s', $alg, $errors),
+                sprintf(
+                    'Failed to load public key for algorithm %s. OpenSSL errors: %s',
+                    $alg,
+                    $this->collectOpenSSLErrors()
+                ),
                 VerificationFailed::ON_PUBLIC_KEY
             );
         }
