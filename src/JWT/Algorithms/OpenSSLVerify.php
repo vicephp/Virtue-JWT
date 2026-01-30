@@ -62,7 +62,11 @@ class OpenSSLVerify extends Algorithm implements VerifiesToken
         }
 
         if (!$public = \openssl_pkey_get_public($this->public->asPem())) {
-            throw new VerificationFailed('Key is invalid.', VerificationFailed::ON_SIGNATURE);
+            $errors = $this->collectOpenSSLErrors();
+            throw new VerificationFailed(
+                sprintf('Failed to load public key for algorithm %s. OpenSSL errors: %s', $alg, $errors),
+                VerificationFailed::ON_PUBLIC_KEY
+            );
         }
         $ecPadding = [
             'ES256' => 32,
@@ -78,6 +82,8 @@ class OpenSSLVerify extends Algorithm implements VerifiesToken
 
         // returns 1 on success, 0 on failure, -1 on error.
         $success = \openssl_verify($msg, $sig, $public, $this->supported[$alg]);
+        $opensslErrors = $this->collectOpenSSLErrors();
+
         //TODO remove together with the support of PHP versions < 8.0
         if (version_compare(PHP_VERSION, '8.0.0') < 0) {
             \openssl_pkey_free($public);
@@ -85,9 +91,35 @@ class OpenSSLVerify extends Algorithm implements VerifiesToken
         if ($success === 1) {
             return;
         } elseif ($success === 0) {
-            throw new VerificationFailed('Could not verify signature.', VerificationFailed::ON_SIGNATURE);
+            $details = [
+                sprintf('Signature verification failed for algorithm %s', $alg),
+                sprintf('Message length: %d bytes', strlen($msg)),
+                sprintf('Signature length: %d bytes', strlen($sig)),
+            ];
+
+            if ($opensslErrors !== 'Unknown error') {
+                $details[] = sprintf('OpenSSL errors: %s', $opensslErrors);
+            }
+
+            throw new VerificationFailed(implode('. ', $details), VerificationFailed::ON_SIGNATURE);
         }
 
-        throw new VerificationFailed('OpenSSL error: ' . \openssl_error_string(), VerificationFailed::ON_SIGNATURE);
+        throw new VerificationFailed(
+            sprintf(
+                'OpenSSL error during %s signature verification: %s',
+                $alg,
+                $opensslErrors ?: $this->collectOpenSSLErrors()
+            ),
+            VerificationFailed::ON_UNKNOWN
+        );
+    }
+
+    private function collectOpenSSLErrors(): string
+    {
+        $errors = [];
+        while ($error = \openssl_error_string()) {
+            $errors[] = $error;
+        }
+        return $errors === [] ? 'Unknown error' : implode('; ', $errors);
     }
 }
